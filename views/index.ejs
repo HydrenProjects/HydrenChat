@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Live Chat</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <!-- Include Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/socket.io/socket.io.js"></script>
+  </head>
+  <body class="bg-gray-100 h-screen" id="body">
+    <style>
+        html, body {
+          height: 100%; /* Ensures the body takes full height */
+          margin: 0; /* Removes default margin */
+        }
+  
+        body {
+          background-image: url(https://media.discordapp.net/attachments/1288879109010882744/1290694321313681438/Microsoft_Surface_Wallpaper.jpeg?ex=670a9342&is=670941c2&hm=bf65eea2d592502eba1560a22076373dfd58b7ebe7fc79362c6c094e5665f3d2&=&format=webp);
+          background-size: cover;
+          background-position: center;
+          background-repeat: no-repeat;
+          background-color: transparent; /* Ensures no background color interferes */
+        }
+  
+        /* Modal Styles */
+        .modal {
+          display: none; /* Hidden by default */
+          position: center;
+          z-index: 1000; /* Sit on top */
+          left: 0;
+          top: 0;
+          width: 100%; /* Full width */
+          height: 100%; /* Full height */
+          overflow: auto; /* Enable scroll if needed */
+          background-color: transparent; /* Black w/ opacity */
+        }
+  
+        .modal-content {
+          background-color: #fefefe;
+          margin: 15% auto; /* 15% from the top and centered */
+          padding: 20px;
+          border: 1px solid #888;
+          width: 80%; /* Could be more or less, depending on screen size */
+        }
+      </style>
+      <!-- Login Section -->
+      <div class="flex justify-center items-center h-full" id="login-section">
+        <div class="bg-white p-8 rounded-lg shadow-md w-96" id="login-box">
+          <h1 class="text-2xl font-bold mb-4">Login</h1>
+          <input type="text" id="username" placeholder="Your name" class="border p-2 w-full mb-2" />
+          <label for="avatar" class="block text-sm font-medium text-gray-700">Upload Avatar</label>
+          <input type="file" id="avatar" class="mb-4" />
+          <button onclick="uploadAvatar()" class="bg-blue-500 text-white px-4 py-2 mb-4 rounded">Upload Avatar</button>
+          <button onclick="login()" class="bg-green-500 text-white px-4 py-2 w-full rounded">Login</button>
+          <p id="avatar-status" class="text-sm text-gray-500 mt-2"></p>
+        </div>
+      </div>
+  
+      <!-- Chat Section -->
+      <div class="hidden h-full flex flex-col" id="chat-section">
+        <div class="flex-grow overflow-y-auto p-4" id="chat-box"></div>
+        <div class="p-4 flex items-center">
+          <!-- Upload Image Icon -->
+          <label for="image-upload" class="cursor-pointer mr-2">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
+              </svg>              
+            <input type="file" id="image-upload" class="hidden" accept="image/*" onchange="sendImage()" />
+          </label>
+          <input type="text" id="message" placeholder="Type your message..." class="border p-2 flex-grow rounded" />
+          <button onclick="sendMessage()" class="bg-blue-500 text-white px-4 py-2 rounded ml-2">Send</button>
+        </div>
+      </div>
+  
+      <!-- Image Modal -->
+      <div id="image-modal" class="modal">
+        <div class="modal-content text-center">
+          <span id="close-modal" class="cursor-pointer text-red-500 float-right">&times;</span>
+          <img id="modal-image" src="" alt="Popup Image" class="max-w-full h-auto mb-4" />
+          <div class="flex justify-center">
+            <a id="open-in-browser" class="bg-blue-500 text-white px-4 py-2 rounded mr-2" href="" target="_blank">Open in Browser</a>
+            <a id="download-image" class="bg-green-500 text-white px-4 py-2 rounded" href="" download>Download</a>
+          </div>
+        </div>
+      </div>
+  
+      <script>
+        const socket = io();
+        let avatarUrl = '';
+        let isLoggedIn = false;
+  
+        // Load previous messages
+        socket.on('load_messages', (messages) => {
+          const chatBox = document.getElementById('chat-box');
+          chatBox.innerHTML = '';
+          messages.forEach((msg) => {
+            const msgEl = document.createElement('p');
+            msgEl.innerHTML = `<img src="${msg.avatar}" alt="Avatar" class="w-8 h-8 inline-block mr-2 rounded-full"> <strong>${msg.username}:</strong> ${msg.message}`;
+            chatBox.appendChild(msgEl);
+          });
+        });
+  
+        // Display new message
+        socket.on('chat_message', (msg) => {
+          const chatBox = document.getElementById('chat-box');
+          const msgEl = document.createElement('p');
+          msgEl.innerHTML = `<img src="${msg.avatar}" alt="Avatar" class="w-8 h-8 inline-block mr-2 rounded-full"> <strong>${msg.username}:</strong> ${msg.message}`;
+          chatBox.appendChild(msgEl);
+          chatBox.scrollTop = chatBox.scrollHeight; // Scroll to bottom
+        });
+  
+        // Upload avatar
+        function uploadAvatar() {
+          const fileInput = document.getElementById('avatar');
+          const formData = new FormData();
+          formData.append('avatar', fileInput.files[0]);
+  
+          fetch('/upload-avatar', {
+            method: 'POST',
+            body: formData,
+          })
+            .then((response) => response.json())
+            .then((data) => {
+              avatarUrl = data.avatarUrl;
+              document.getElementById('avatar-status').textContent = 'Avatar uploaded successfully!';
+            })
+            .catch((error) => console.error('Error uploading avatar:', error));
+        }
+  
+        // Log in the user
+        function login() {
+          const username = document.getElementById('username').value;
+  
+          if (!username || !avatarUrl) {
+            alert('Please enter a username and upload an avatar.');
+            return;
+          }
+  
+          isLoggedIn = true;
+          document.getElementById('login-section').classList.add('hidden');
+          document.getElementById('chat-section').classList.remove('hidden');
+        }
+  
+        // Send a message on Enter key or button click
+        function sendMessage() {
+          const message = document.getElementById('message').value;
+  
+          if (!isLoggedIn) {
+            alert('You must be logged in to send a message.');
+            return;
+          }
+  
+          if (!message) {
+            alert('Please enter a message.');
+            return;
+          }
+  
+          socket.emit('chat_message', {
+            username: document.getElementById('username').value,
+            message,
+            avatar: avatarUrl,
+          });
+          document.getElementById('message').value = '';
+        }
+  
+        // Send image function
+        function sendImage() {
+          const fileInput = document.getElementById('image-upload');
+          const file = fileInput.files[0];
+  
+          if (!file) return;
+  
+          const reader = new FileReader();
+          reader.onload = function (event) {
+            const imageData = event.target.result;
+            const imgEl = document.createElement('img');
+            imgEl.src = imageData;
+            imgEl.alt = 'User Image';
+            imgEl.className = 'cursor-pointer max-w-xs';
+            imgEl.onclick = function () {
+              openImageModal(imageData); // Open modal with the image
+            };
+  
+            // Append the image to the chat box
+            const chatBox = document.getElementById('chat-box');
+            const msgEl = document.createElement('p');
+            msgEl.appendChild(imgEl);
+            chatBox.appendChild(msgEl);
+            chatBox.scrollTop = chatBox.scrollHeight; // Scroll to bottom
+  
+            // Emit the image to the server
+            socket.emit('chat_message', {
+              username: document.getElementById('username').value,
+              message: `<img src="${imageData}" class="max-w-xs" onclick="openImageModal('${imageData}')" style="cursor:pointer;">`,
+              avatar: avatarUrl,
+            });
+          };
+          reader.readAsDataURL(file);
+        }
+  
+        // Open the modal with the image
+        function openImageModal(imageSrc) {
+          const modal = document.getElementById('image-modal');
+          const modalImage = document.getElementById('modal-image');
+          const openInBrowser = document.getElementById('open-in-browser');
+          const downloadImage = document.getElementById('download-image');
+  
+          modal.style.display = 'block';
+          modalImage.src = imageSrc;
+          openInBrowser.href = imageSrc; // Set the link to open in a new tab
+          downloadImage.href = imageSrc; // Set the link for download
+        }
+  
+        // Close the modal
+        document.getElementById('close-modal').onclick = function () {
+          const modal = document.getElementById('image-modal');
+          modal.style.display = 'none';
+        };
+  
+        // Close the modal when clicking outside of it
+        window.onclick = function (event) {
+          const modal = document.getElementById('image-modal');
+          if (event.target == modal) {
+            modal.style.display = 'none';
+          }
+        };
+  
+        // Toggle Dark Mode
+        document.getElementById('dark-mode-toggle').onclick = function () {
+          const body = document.getElementById('body');
+          body.classList.toggle('bg-gray-900');
+          body.classList.toggle('bg-gray-100');
+          body.classList.toggle('text-white');
+          body.classList.toggle('text-black');
+        };
+      </script>
+    </body>
+  </html>
